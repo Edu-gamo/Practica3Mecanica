@@ -2,6 +2,8 @@
 #include <imgui\imgui_impl_glfw_gl3.h>
 #include <glm\gtc\matrix_transform.hpp>
 #include <time.h>
+#include <iostream>
+#include <glm\gtc\quaternion.hpp>
 
 using namespace glm;
 
@@ -13,8 +15,14 @@ vec3 postPos = vec3(0.0f);
 vec3 postVel = vec3(0.0f);
 vec3 linearMomentum;
 vec3 angularMomentum;
-mat3 orientation;
+//mat3 orientation;
+quat orientation2;
+
 float mass = 1.0f;
+
+float eps = 0.5f;
+
+vec3 J, Timpulse;
 
 vec3 force = vec3(0.0f, -9.8f, 0.0f);
 
@@ -141,9 +149,11 @@ void PhysicsInit() {
 	particles[7].position = vec3(position.x + 0.5f, position.y + 0.5f, position.z + 0.5f);
 
 	vec3 torque, torqueForce;
-	torqueForce = vec3(rand() % 15, rand() % 15, rand() % 15);
+	torqueForce = vec3(rand() % 25, rand() % 25, rand() % 25);
 	torque = cross(particles[rand() % 8].position - position, torqueForce);
 	angularMomentum = angularMomentum + 0.033f * torque;
+
+	linearMomentum = vec3(rand() % 10 - 5, rand() % 10 - 5, rand() % 10 - 5);
 
 }
 
@@ -159,12 +169,145 @@ void PhysicsUpdate(float dt) {
 	vec3 v = linearMomentum / mass;
 	postPos = position + dt * v;
 	mat3 I = mat3(1.0f / 12.0f * mass*(pow(1, 2) + pow(1, 2)));
+	mat3 orientation = glm::mat3_cast(orientation2);
 	mat3 I2 = orientation * inverse(I) * transpose(orientation);
 	vec3 w = I2 * angularMomentum;
-	mat3 wMat = mat3(vec3(0, w.z, -w.y), vec3(-w.z, 0, w.x), vec3(w.y, -w.x, 0));
-	orientation = orientation + dt * (wMat * orientation);
+	//mat3 wMat = mat3(vec3(0, w.z, -w.y), vec3(-w.z, 0, w.x), vec3(w.y, -w.x, 0));
+	//orientation = orientation + dt * (wMat * orientation);
+	orientation2 = orientation2 + dt * (0.5f*quat(0, w) * orientation2);
+	orientation2 = normalize(orientation2);
 
-	//Detectar Colisiones
+	for (int i = 0; i < 8; i++) {
+		particles[i].vel = vel;
+		particles[i].postVel = postVel;
+	}
+
+	particles[0].position = vec3(position.x - 0.5f, position.y - 0.5f, position.z - 0.5f);
+	particles[1].position = vec3(position.x - 0.5f, position.y - 0.5f, position.z + 0.5f);
+	particles[2].position = vec3(position.x + 0.5f, position.y - 0.5f, position.z - 0.5f);
+	particles[3].position = vec3(position.x + 0.5f, position.y - 0.5f, position.z + 0.5f);
+	particles[4].position = vec3(position.x - 0.5f, position.y + 0.5f, position.z - 0.5f);
+	particles[5].position = vec3(position.x - 0.5f, position.y + 0.5f, position.z + 0.5f);
+	particles[6].position = vec3(position.x + 0.5f, position.y + 0.5f, position.z - 0.5f);
+	particles[7].position = vec3(position.x + 0.5f, position.y + 0.5f, position.z + 0.5f);
+
+	particles[0].postPos = vec3(postPos.x - 0.5f, postPos.y - 0.5f, postPos.z - 0.5f);
+	particles[1].postPos = vec3(postPos.x - 0.5f, postPos.y - 0.5f, postPos.z + 0.5f);
+	particles[2].postPos = vec3(postPos.x + 0.5f, postPos.y - 0.5f, postPos.z - 0.5f);
+	particles[3].postPos = vec3(postPos.x + 0.5f, postPos.y - 0.5f, postPos.z + 0.5f);
+	particles[4].postPos = vec3(postPos.x - 0.5f, postPos.y + 0.5f, postPos.z - 0.5f);
+	particles[5].postPos = vec3(postPos.x - 0.5f, postPos.y + 0.5f, postPos.z + 0.5f);
+	particles[6].postPos = vec3(postPos.x + 0.5f, postPos.y + 0.5f, postPos.z - 0.5f);
+	particles[7].postPos = vec3(postPos.x + 0.5f, postPos.y + 0.5f, postPos.z + 0.5f);
+
+	for (int i = 0; i < 8; i++) {
+		//Detectar Colisiones
+		float dotProductDown = (normalYDown[0] * particles[i].position.x + normalYDown[1] * particles[i].position.y + normalYDown[2] * particles[i].position.z);
+		float dotProductPostDown = (normalYDown[0] * particles[i].postPos.x + normalYDown[1] * particles[i].postPos.y + normalYDown[2] * particles[i].postPos.z);
+
+		//Plano bajo
+		if ((dotProductDown + dDown) * (dotProductPostDown + dDown) <= 0) {
+			
+			vec3 p = particles[i].vel + cross(w, (particles[i].position - position));
+			vec3 vRel = vec3(normalYDown[0], normalYDown[1], normalYDown[2]) * p;
+			vec3 j = (-(1+eps)*vRel)/(1 / mass + vec3(normalYDown[0], normalYDown[1], normalYDown[2]) * cross(inverse(I) * cross(particles[i].position, vec3(normalYDown[0], normalYDown[1], normalYDown[2])), particles[i].position));
+
+			J = j*vec3(normalYDown[0], normalYDown[1], normalYDown[2]);
+			Timpulse = cross(particles[i].position, J);
+
+			linearMomentum += J;
+			angularMomentum += Timpulse;
+
+		}
+
+		float dotProductTop = (normalYTop[0] * particles[i].position.x + normalYTop[1] * particles[i].position.y + normalYTop[2] * particles[i].position.z);
+		float dotProductPostTop = (normalYTop[0] * particles[i].postPos.x + normalYTop[1] * particles[i].postPos.y + normalYTop[2] * particles[i].postPos.z);
+
+		//Plano alto
+		if ((dotProductTop + dTop) * (dotProductPostTop + dTop) <= 0) {
+
+			vec3 p = particles[i].vel + cross(w, (particles[i].position - position));
+			vec3 vRel = vec3(normalYTop[0], normalYTop[1], normalYTop[2]) * p;
+			vec3 j = (-(1 + eps)*vRel) / (1 / mass + vec3(normalYTop[0], normalYTop[1], normalYTop[2]) * cross(inverse(I) * cross(particles[i].position, vec3(normalYTop[0], normalYTop[1], normalYTop[2])), particles[i].position));
+
+			J = j*vec3(normalYTop[0], normalYTop[1], normalYTop[2]);
+			Timpulse = cross(particles[i].position, J);
+
+			linearMomentum += J;
+			angularMomentum += Timpulse;
+
+		}
+
+		float dotProductRight = (normalXRight[0] * particles[i].position.x + normalXRight[1] * particles[i].position.y + normalXRight[2] * particles[i].position.z);
+		float dotProductPostRight = (normalXRight[0] * particles[i].postPos.x + normalXRight[1] * particles[i].postPos.y + normalXRight[2] * particles[i].postPos.z);
+
+		//Plano darecha
+		if ((dotProductRight + dRight) * (dotProductPostRight + dRight) <= 0) {
+
+			vec3 p = particles[i].vel + cross(w, (particles[i].position - position));
+			vec3 vRel = vec3(normalXRight[0], normalXRight[1], normalXRight[2]) * p;
+			vec3 j = (-(1 + eps)*vRel) / (1 / mass + vec3(normalXRight[0], normalXRight[1], normalXRight[2]) * cross(inverse(I) * cross(particles[i].position, vec3(normalXRight[0], normalXRight[1], normalXRight[2])), particles[i].position));
+
+			J = j*vec3(normalXRight[0], normalXRight[1], normalXRight[2]);
+			Timpulse = cross(particles[i].position, J);
+
+			linearMomentum += J;
+			angularMomentum += Timpulse;
+		}
+
+		float dotProductLeft = (normalXLeft[0] * particles[i].position.x + normalXLeft[1] * particles[i].position.y + normalXLeft[2] * particles[i].position.z);
+		float dotProductPostLeft = (normalXLeft[0] * particles[i].postPos.x + normalXLeft[1] * particles[i].postPos.y + normalXLeft[2] * particles[i].postPos.z);
+
+		//Plano izquierda
+		if ((dotProductLeft + dLeft) * (dotProductPostLeft + dLeft) <= 0) {
+
+			vec3 p = particles[i].vel + cross(w, (particles[i].position - position));
+			vec3 vRel = vec3(normalXLeft[0], normalXLeft[1], normalXLeft[2]) * p;
+			vec3 j = (-(1 + eps)*vRel) / (1 / mass + vec3(normalXLeft[0], normalXLeft[1], normalXLeft[2]) * cross(inverse(I) * cross(particles[i].position, vec3(normalXLeft[0], normalXLeft[1], normalXLeft[2])), particles[i].position));
+
+			J = j*vec3(normalXLeft[0], normalXLeft[1], normalXLeft[2]);
+			Timpulse = cross(particles[i].position, J);
+
+			linearMomentum += J;
+			angularMomentum += Timpulse;
+		}
+
+		float dotProductFront = (normalZFront[0] * particles[i].position.x + normalZFront[1] * particles[i].position.y + normalZFront[2] * particles[i].position.z);
+		float dotProductPostFront = (normalZFront[0] * particles[i].postPos.x + normalZFront[1] * particles[i].postPos.y + normalZFront[2] * particles[i].postPos.z);
+
+		//Plano frontal
+		if ((dotProductFront + dFront) * (dotProductPostFront + dFront) <= 0) {
+
+			vec3 p = particles[i].vel + cross(w, (particles[i].position - position));
+			vec3 vRel = vec3(normalZFront[0], normalZFront[1], normalZFront[2]) * p;
+			vec3 j = (-(1 + eps)*vRel) / (1 / mass + vec3(normalZFront[0], normalZFront[1], normalZFront[2]) * cross(inverse(I) * cross(particles[i].position, vec3(normalZFront[0], normalZFront[1], normalZFront[2])), particles[i].position));
+
+			J = j*vec3(normalZFront[0], normalZFront[1], normalZFront[2]);
+			Timpulse = cross(particles[i].position, J);
+
+			linearMomentum += J;
+			angularMomentum += Timpulse;
+		}
+
+		float dotProductBack = (normalZBack[0] * particles[i].position.x + normalZBack[1] * particles[i].position.y + normalZBack[2] * particles[i].position.z);
+		float dotProductPostBack = (normalZBack[0] * particles[i].postPos.x + normalZBack[1] * particles[i].postPos.y + normalZBack[2] * particles[i].postPos.z);
+
+		//Plano trasero
+		if ((dotProductBack + dBack) * (dotProductPostBack + dBack) <= 0) {
+
+			vec3 p = particles[i].vel + cross(w, (particles[i].position - position));
+			vec3 vRel = vec3(normalZBack[0], normalZBack[1], normalZBack[2]) * p;
+			vec3 j = (-(1 + eps)*vRel) / (1 / mass + vec3(normalZBack[0], normalZBack[1], normalZBack[2]) * cross(inverse(I) * cross(particles[i].position, vec3(normalZBack[0], normalZBack[1], normalZBack[2])), particles[i].position));
+
+			J = j*vec3(normalZBack[0], normalZBack[1], normalZBack[2]);
+			Timpulse = cross(particles[i].position, J);
+
+			linearMomentum += J;
+			angularMomentum += Timpulse;
+		}
+	}
+
+	/*//Detectar Colisiones
 	float dotProductDown = (normalYDown[0] * position.x + normalYDown[1] * position.y + normalYDown[2] * position.z);
 	float dotProductPostDown = (normalYDown[0] * postPos.x + normalYDown[1] * postPos.y + normalYDown[2] * postPos.z);
 
@@ -307,14 +450,14 @@ void PhysicsUpdate(float dt) {
 		postVel.x = postVel.x - 1 * tangVel[0];
 		postVel.y = postVel.y - 1 * tangVel[1];
 		postVel.z = postVel.z - 1 * tangVel[2];
-	}
+	}*/
 
 	position = postPos;
 	vel = postVel;
 
 	glm::mat4 transform, translation, rotation;
 	translation = translate(translation, position);
-	rotation = mat4(orientation);
+	rotation = mat4_cast(orientation2);
 	transform = translation * rotation;
 	Cube::updateCube(transform);
 }
