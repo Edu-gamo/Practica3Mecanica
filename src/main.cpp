@@ -20,6 +20,8 @@ extern void GLinit(int width, int height);
 extern void GLcleanup();
 extern void GLrender();
 
+bool controlTiempo = false;
+
 namespace {
 	const int expected_fps = 30;
 	const double expected_frametime = 1.0 / expected_fps;
@@ -82,6 +84,15 @@ int main(int argc, char** argv){
 	while(!glfwWindowShouldClose(window)) { // Loop until the user closes the window
 		glfwPollEvents(); // Poll for events
 		ImGui_ImplGlfwGL3_NewFrame();
+
+		if ((int)glfwGetTime() % 5 == 1) {
+			controlTiempo = true;
+		}
+
+		if ((int)glfwGetTime() % 5 == 0 && controlTiempo == true) {
+			PhysicsInit();
+			controlTiempo = false;
+		}
 		
 		ImGuiIO& io = ImGui::GetIO();
 		GUI();
